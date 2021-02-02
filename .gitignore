@@ -1,4 +1,5 @@
 *
+!result/.gitkeep
 !update-account.py
 !logging.conf
 !input.csv
