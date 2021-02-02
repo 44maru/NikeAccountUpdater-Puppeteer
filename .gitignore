@@ -1,12 +1,5 @@
-*
-!result/.gitkeep
-!update-account.py
-!logging.conf
-!input.csv
-!address_list.txt
-!config.txt
-!proxy_mng/
-!build.bat
-!.gitignore
-!Pipfile
-!Pipfile.lock
+.venv
+build/
+dist/
+*.log
+*.log.*
