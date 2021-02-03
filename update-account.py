@@ -34,6 +34,8 @@ ADDRESS_LIST_TXT = "./address_list.txt"
 
 KEY_THREAD_NUM = "THREAD_NUM"
 KEY_HEADLESS = "HEADLESS"
+KEY_LOGIN_TYPING_INTERVAL_MIN = "LOGIN_TYPING_INTERVAL_MIN"
+KEY_LOGIN_TYPING_INTERVAL_MAX = "LOGIN_TYPING_INTERVAL_MAX"
 KEY_GET_NEW_ADDRESS_FROM_POI_POI = "GET_NEW_ADDRESS_FROM_MERUADO_POI_POI"
 KEY_MERUADO_POI_POI_USER = "MERUADO_POI_POI_USER"
 KEY_MERUADO_POI_POI_PASS = "MERUADO_POI_POI_PASS"
@@ -156,7 +158,7 @@ async def type_txt_slowly(page, xpath, txt):
     await elem[0].click(clickCount=3)
     await elem[0].press('Backspace')
     for s in txt:
-        await asyncio.sleep(random.uniform(0.05, 0.5))
+        await asyncio.sleep(random.uniform(CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MIN], CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MAX]))
         await elem[0].type(s)
 
 
@@ -260,6 +262,12 @@ def load_config():
 
         elif items[0] == KEY_HEADLESS:
             CONFIG_DICT[KEY_HEADLESS] = ("true" == items[1].lower())
+
+        elif items[0] == KEY_LOGIN_TYPING_INTERVAL_MIN:
+            CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MIN] = float(items[1])
+
+        elif items[0] == KEY_LOGIN_TYPING_INTERVAL_MAX:
+            CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MAX] = float(items[1])
 
         elif items[0] == KEY_GET_NEW_ADDRESS_FROM_POI_POI:
             # pyInstallerでdistuilsのimportがエラーになるので、distutilsを利用しない

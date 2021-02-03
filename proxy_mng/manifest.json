@@ -4,9 +4,6 @@
     "manifest_version": 2,
     "description": "Powered by BetterNikeBot.com",
     "homepage_url": "http://www.betternikebot.com",
-    "icons": {
-        "128": "icon.png"
-    },
     "background": {
         "scripts": [
             "background.js"
@@ -14,7 +11,6 @@
         "persistent": true
     },
     "browser_action": {
-        "default_icon": "icon.png",
         "default_title": "Better Nike Bot"
     },
     "permissions": [
@@ -24,23 +20,5 @@
         "webRequest",
         "webRequestBlocking",
         "<all_urls>"
-    ],
-    "content_scripts": [
-        {
-            "matches": [
-                "<all_urls>"
-            ],
-            "css": [
-                "inject.css"
-            ]
-        },
-        {
-            "matches": [
-                "<all_urls>"
-            ],
-            "js": [
-                "inject.js"
-            ]
-        }
     ]
 }
