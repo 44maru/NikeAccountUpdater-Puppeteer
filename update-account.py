@@ -33,6 +33,7 @@ PROXY_TXT = "./proxy.txt"
 ADDRESS_LIST_TXT = "./address_list.txt"
 
 KEY_THREAD_NUM = "THREAD_NUM"
+KEY_HEADLESS = "HEADLESS"
 KEY_GET_NEW_ADDRESS_FROM_POI_POI = "GET_NEW_ADDRESS_FROM_MERUADO_POI_POI"
 KEY_MERUADO_POI_POI_USER = "MERUADO_POI_POI_USER"
 KEY_MERUADO_POI_POI_PASS = "MERUADO_POI_POI_PASS"
@@ -51,7 +52,9 @@ HTML_LOGIN_BLOCK_MSG_PATH = """//*[@id="nike-unite-error-view"]/div/ul/li"""
 HTML_ACCOUNT_SETTING_PATH = """/html/body/div[7]/nav/div[1]/ul[2]/li[1]/a/span[2]"""
 HTML_ACCOUNT_SETTING_EMAIL_PATH = """//*[@id="email"]"""
 HTML_ACCOUNT_SETTING_FEET_PATH = """//*[@id="content"]/div[1]/div[2]/div[1]/form/div[12]/div[4]/div[1]/div[1]/div[1]/div[2]/div[1]/a/span"""
-HTML_ACCOUNT_SETTING_STATE_OPTION_TEXT_PATH = """//*[@id="state"]/option[contains(text() , "{}")]"""
+HTML_ACCOUNT_SETTING_COUNTRY_OPTION_TEXT_PATH = """//*[@id="country"]/option[contains(text(), "{}")]"""
+HTML_ACCOUNT_SETTING_COUNTRY_ID = "country"
+HTML_ACCOUNT_SETTING_STATE_OPTION_TEXT_PATH = """//*[@id="state"]/option[contains(text(), "{}")]"""
 HTML_ACCOUNT_SETTING_STATE_ID = "state"
 HTML_ACCOUNT_SETTING_ADDRESS_PATH = """//*[@id="city"]"""
 HTML_ACCOUNT_SETTING_ZIPCODE_PATH = """//*[@id="code"]"""
@@ -72,32 +75,7 @@ SUCCESS = "成功"
 ERROR = "失敗"
 OUT_DIR = "result"
 
-HOKKAIDO = "北海道"
-AKAHIRA_ZIP_CODE = "079-1143"
-LAST_NAME = "タナカ"
-FIRST_NAME = "タイチ"
-
-LOGIN_ERR_MSG = "入力されたEメールアドレスまたはパスワードに誤りがあります。"
-LOGIN_BLOCK_MSG = "申し訳ありませんが、現在、サーバーに接続できません。 あとでもう一度お試しください。"
-ACCOUNT_SAVE_SUCCESS_MSG = "変更が正常に保存されました。"
-WAIT_SEC = 20
-
-JAVA_SCRIPT_TO_RESIZE_WINDOW = """
-  function getRandomInt(max) {
-    return Math.floor(Math.random() * Math.floor(max));
-  }
-  
-  for(x=0; x<200;x++) {
-      var mybnbdiv = document.createElement('div');
-      var bnb_parent = document.querySelector('form#nike-unite-loginForm');
-      mybnbdiv.className = 'bnbnike' + getRandomInt(10000);
-      mybnbdiv.style.width = getRandomInt(50) + 'px';
-      mybnbdiv.style.height = getRandomInt(50) + 'px';
-      mybnbdiv.style.display = 'inline-block';
-      bnb_parent.appendChild(mybnbdiv);
-  }
-"""
-
+JAPAN = "日本"
 
 class LoginError(Exception):
     pass
@@ -123,8 +101,9 @@ async def updateAccount(accountInfo, semaphore):
     global output_q
 
     with await semaphore:
+        browser = None
         try:
-            browser = await launch(headless=False, 
+            browser = await launch(headless=CONFIG_DICT[KEY_HEADLESS], 
                         defaultViewport=None, 
                         ignoreDefaultArgs=["--disable-extensions","--enable-automation"], 
                         args=['--start-maximized', "--load-extension={}/{}".format(os.getcwd(), CHROME_PROXY_EXTENTION_DIR)])
@@ -133,7 +112,7 @@ async def updateAccount(accountInfo, semaphore):
             sleep(random.randint(500, 2000) / 1000.0)
             if 0 < len(PROXY_LIST):
                 b64_json = base64.b64encode(("""{"url":"%s", "proxy":"%s"}""" % (
-                    ACCOUNT_SETTING_URL, PROXY_LIST[random.randint(0, len(PROXY_LIST) - 1)])).encode("utf-8"))
+                    ACCOUNT_SETTING_URL, random.choice(PROXY_LIST))).encode("utf-8"))
                 await page.goto("https://configure.bnb/" + b64_json.decode("utf-8"))
             else:
                 await page.goto(ACCOUNT_SETTING_URL)
@@ -168,6 +147,17 @@ async def updateAccount(accountInfo, semaphore):
         finally:
             if browser is not None:
                 await browser.close()
+
+
+async def type_txt_slowly(page, xpath, txt):
+    await page.waitForXPath(xpath)
+    elem = await page.xpath(xpath)
+
+    await elem[0].click(clickCount=3)
+    await elem[0].press('Backspace')
+    for s in txt:
+        await asyncio.sleep(random.uniform(0.05, 0.5))
+        await elem[0].type(s)
 
 
 async def type_txt(page, xpath, txt):
@@ -206,6 +196,7 @@ async def waitForEnabled(page, xpath):
 
     raise Exception("Timedout wait for element becoms enable. '{}'".format(xpath))
     
+
 async def isEnabled(page, xpath):
     await page.waitForXPath(xpath)
     return len(await page.xpath(xpath + "[@disabled]")) == 0
@@ -229,15 +220,16 @@ async def type_login_info(page, email, passwd):
             await press_enter(page, HTML_LOGIN_PASS_PATH)
         else:
             await press_enter(page, HTML_LOGIN_EMAIL_PATH)
-        asyncio.sleep(0.5)
+        await asyncio.sleep(0.5)
 
-    await type_txt(page, HTML_LOGIN_EMAIL_PATH, email)
-    await type_txt(page, HTML_LOGIN_PASS_PATH, passwd)
+    await type_txt_slowly(page, HTML_LOGIN_EMAIL_PATH, email)
+    await type_txt_slowly(page, HTML_LOGIN_PASS_PATH, passwd)
 
 
 async def update_account_setting(page, email, new_email):
     addressInfo = random.choice(ADDRESS_LIST)
     await type_txt(page, HTML_ACCOUNT_SETTING_EMAIL_PATH, new_email)
+    await click_from_drop_down_list(page , HTML_ACCOUNT_SETTING_COUNTRY_OPTION_TEXT_PATH, HTML_ACCOUNT_SETTING_COUNTRY_ID, JAPAN)
     await click_from_drop_down_list(page , HTML_ACCOUNT_SETTING_STATE_OPTION_TEXT_PATH, HTML_ACCOUNT_SETTING_STATE_ID, addressInfo.state)
     await type_txt(page, HTML_ACCOUNT_SETTING_ADDRESS_PATH, addressInfo.address)
     await type_txt(page, HTML_ACCOUNT_SETTING_ZIPCODE_PATH, addressInfo.zipcode)
@@ -266,6 +258,9 @@ def load_config():
         if items[0] == KEY_THREAD_NUM:
             CONFIG_DICT[KEY_THREAD_NUM] = int(items[1])
 
+        elif items[0] == KEY_HEADLESS:
+            CONFIG_DICT[KEY_HEADLESS] = ("true" == items[1].lower())
+
         elif items[0] == KEY_GET_NEW_ADDRESS_FROM_POI_POI:
             # pyInstallerでdistuilsのimportがエラーになるので、distutilsを利用しない
             # virtualenvのバージョンが16.4だとエラーになるらしい(16.3に下げるとうまくいくらしい)
@@ -284,7 +279,9 @@ def load_proxy():
         return
 
     for line in open(PROXY_TXT, "r"):
-        PROXY_LIST.append(line.replace("\n", ""))
+        proxyUrl = line.replace("\n", "")
+        log.info("Found proxy {}".format(proxyUrl))
+        PROXY_LIST.append(proxyUrl)
 
 
 def load_address_list():
