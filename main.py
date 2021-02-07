@@ -469,12 +469,12 @@ def writePhoneNumberResultCsv():
     error_cnt = 0
     f = open("%s\\%s" % (OUT_DIR, dt.now().strftime(
         'result-phone-number-%Y%m%d-%H%M%S.csv')), "w")
-    f.write("アドレス,電話番号,結果,失敗理由\n")
     for i in range(output_q.qsize()):
         items = output_q.get()
         accountInfo = items[0]
-        f.write("%s,%s,%s,%s\n" % (accountInfo.email,
-                                   accountInfo.phoneNumber, items[1], items[2]))
+        f.write("%s:%s,%s\n" % (accountInfo.email,
+                                accountInfo.password,
+                                accountInfo.phoneNumber))
 
         if items[1] == SUCCESS:
             success_cnt += 1
