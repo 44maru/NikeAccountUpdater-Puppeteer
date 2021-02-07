@@ -8,6 +8,7 @@ pyinstaller = "==3.4"
 
 [packages]
 pyppeteer = "==0.2.5"
+fire = "*"
 
 [requires]
 python_version = "3.6"
