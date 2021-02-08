@@ -27,6 +27,7 @@ https://github.com/pyppeteer/pyppeteer/issues/213#issuecomment-768850251
 CHROME_PROXY_EXTENTION_DIR = "proxy_mng"
 
 ACCOUNT_SETTING_URL = "https://www.nike.com/jp/member/settings"
+ACCOUNT_PROFILE_URL = "https://www.nike.com/jp/member/profile"
 MERUADO_POI_POI_URL = "https://m.kuku.lu/index.php"
 
 LOG_CONF = "./logging.conf"
@@ -118,7 +119,7 @@ async def callOperation(operation, accountInfo, semaphore):
                                        "--disable-extensions", "--enable-automation"],
                                    args=['--start-maximized', "--load-extension={}/{}".format(os.getcwd(), CHROME_PROXY_EXTENTION_DIR)])
             page = await browser.newPage()
-            log.debug("Start updating account %s", accountInfo.email)
+            log.debug("Start operation for account %s", accountInfo.email)
             sleep(random.randint(500, 2000) / 1000.0)
             if 0 < len(PROXY_LIST):
                 b64_json = base64.b64encode(("""{"url":"%s", "proxy":"%s"}""" % (
@@ -136,6 +137,7 @@ async def callOperation(operation, accountInfo, semaphore):
             loadPromise = page.waitForNavigation()
             await click(page, HTML_LOGIN_BUTTON_PATH)
             await loadPromise
+            await page.goto(ACCOUNT_PROFILE_URL)
 
             await operation(page, accountInfo)
 
@@ -472,14 +474,17 @@ def writePhoneNumberResultCsv():
     for i in range(output_q.qsize()):
         items = output_q.get()
         accountInfo = items[0]
-        f.write("%s:%s,%s\n" % (accountInfo.email,
-                                accountInfo.password,
-                                accountInfo.phoneNumber))
 
         if items[1] == SUCCESS:
             success_cnt += 1
         else:
+            accountInfo.phoneNumber = "ERROR"
             error_cnt += 1
+
+        f.write("%s:%s,%s\n" % (accountInfo.email,
+                                accountInfo.password,
+                                accountInfo.phoneNumber))
+
     f.close()
     log.info("")
     log.info("Success:%d Fail:%d" % (success_cnt, error_cnt))
