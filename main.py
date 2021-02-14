@@ -139,6 +139,7 @@ async def callOperation(operation, accountInfo, semaphore):
             await loadPromise
             await page.goto(ACCOUNT_PROFILE_URL)
 
+            sleep(random.randint(1000, 3000) / 1000.0)
             await operation(page, accountInfo)
 
             log.info("Succeeded to operation for %s", accountInfo.email)
