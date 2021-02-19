@@ -8,6 +8,7 @@ from datetime import datetime as dt
 from time import sleep
 import asyncio
 
+import pyperclip
 import fire
 
 from pyppeteer import launch
@@ -26,8 +27,8 @@ https://github.com/pyppeteer/pyppeteer/issues/213#issuecomment-768850251
 
 CHROME_PROXY_EXTENTION_DIR = "proxy_mng"
 
+ACCOUNT_LOGIN_URL = "https://www.nike.com/jp/login"
 ACCOUNT_SETTING_URL = "https://www.nike.com/jp/member/settings"
-ACCOUNT_PROFILE_URL = "https://www.nike.com/jp/member/profile"
 MERUADO_POI_POI_URL = "https://m.kuku.lu/index.php"
 
 LOG_CONF = "./logging.conf"
@@ -123,10 +124,10 @@ async def callOperation(operation, accountInfo, semaphore):
             sleep(random.randint(500, 2000) / 1000.0)
             if 0 < len(PROXY_LIST):
                 b64_json = base64.b64encode(("""{"url":"%s", "proxy":"%s"}""" % (
-                    ACCOUNT_SETTING_URL, random.choice(PROXY_LIST))).encode("utf-8"))
+                    ACCOUNT_LOGIN_URL, random.choice(PROXY_LIST))).encode("utf-8"))
                 await page.goto("https://configure.bnb/" + b64_json.decode("utf-8"))
             else:
-                await page.goto(ACCOUNT_SETTING_URL)
+                await page.goto(ACCOUNT_LOGIN_URL)
 
             await type_login_info(page, accountInfo.email, accountInfo.password)
 
@@ -137,9 +138,9 @@ async def callOperation(operation, accountInfo, semaphore):
             loadPromise = page.waitForNavigation()
             await click(page, HTML_LOGIN_BUTTON_PATH)
             await loadPromise
-            await page.goto(ACCOUNT_PROFILE_URL)
 
-            sleep(random.randint(1000, 3000) / 1000.0)
+            log.debug("sleep 3 - 5 sec")
+            sleep(random.randint(3000, 5000) / 1000.0)
             await operation(page, accountInfo)
 
             log.info("Succeeded to operation for %s", accountInfo.email)
@@ -160,6 +161,16 @@ async def callOperation(operation, accountInfo, semaphore):
         finally:
             if browser is not None:
                 await browser.close()
+
+
+async def paste_txt(page, xpath):
+    await page.waitForXPath(xpath)
+    elem = await page.xpath(xpath)
+
+    await elem[0].click()
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyV')
+    await page.keyboard.up('Control')
 
 
 async def type_txt_slowly(page, xpath, txt):
@@ -227,6 +238,8 @@ async def press_enter(page, xpath):
 
 
 async def type_login_info(page, email, passwd):
+    global log
+
     for i in range(random.randint(1, 5)):
         if random.randint(0, 1) == 0:
             await press_enter(page, HTML_LOGIN_PASS_PATH)
@@ -234,8 +247,19 @@ async def type_login_info(page, email, passwd):
             await press_enter(page, HTML_LOGIN_EMAIL_PATH)
         await asyncio.sleep(0.5)
 
+    if random.randint(0, 1) == 0:
+        log.debug("copy and paste at login text box : {}".format(email))
+        await copy_paste_address_and_passwd(page, email, passwd)
+
     await type_txt_slowly(page, HTML_LOGIN_EMAIL_PATH, email)
     await type_txt_slowly(page, HTML_LOGIN_PASS_PATH, passwd)
+
+
+async def copy_paste_address_and_passwd(page, email, passwd):
+    pyperclip.copy(email)
+    await paste_txt(page,  HTML_LOGIN_EMAIL_PATH)
+    pyperclip.copy(passwd)
+    await paste_txt(page,  HTML_LOGIN_PASS_PATH)
 
 
 async def updateAccountSetting(page, accountInfo):
