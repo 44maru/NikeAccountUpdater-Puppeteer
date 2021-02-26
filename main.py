@@ -29,10 +29,16 @@ CHROME_PROXY_EXTENTION_DIR = "proxy_mng"
 
 ACCOUNT_LOGIN_URL = "https://www.nike.com/jp/login"
 ACCOUNT_SETTING_URL = "https://www.nike.com/jp/member/settings"
+ACCOUNT_PROFILE_URL = "https://www.nike.com/jp/member/profile"
+NIKE_ORDERS_URL = "https://www.nike.com/jp/orders"
+NIKE_EVENT_URL = "https://web.nike.com/events/my_events/index.html#/discover"
+NIKE_INBOX_URL = "https://www.nike.com/member/inbox/"
+
 MERUADO_POI_POI_URL = "https://m.kuku.lu/index.php"
 
 LOG_CONF = "./logging.conf"
 INPUT_CSV = "./input.csv"
+INPUT_LOGIN_PATROL_CSV = "./input_login_patrol.csv"
 INPUT_PHONE_NUMBER_CHECK_CSV = "./input_phone_number_check.csv"
 CONFIG_TXT = "./config.txt"
 PROXY_TXT = "./proxy.txt"
@@ -115,6 +121,7 @@ async def callOperation(operation, accountInfo, semaphore):
         browser = None
         try:
             browser = await launch(headless=CONFIG_DICT[KEY_HEADLESS],
+                                   executablePath="C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
                                    defaultViewport=None,
                                    ignoreDefaultArgs=[
                                        "--disable-extensions", "--enable-automation"],
@@ -184,8 +191,8 @@ async def type_txt_slowly(page, xpath, txt):
         await elem[0].type(s)
 
 
-async def type_txt(page, xpath, txt):
-    await page.waitForXPath(xpath)
+async def type_txt(page, xpath, txt, timeout=15000):
+    await page.waitForXPath(xpath, {"timeout": timeout})
     elem = await page.xpath(xpath)
 
     await elem[0].click(clickCount=3)
@@ -289,6 +296,21 @@ async def getAccountPhoneNumber(page, accountInfo):
     except TimeoutError as e:
         pass
     print("{} {}".format(accountInfo.email, accountInfo.phoneNumber))
+    await asyncio.sleep(random.randint(3000, 5000)/1000.0)
+
+
+async def accessRandomPage(page, accountInfo):
+    await page.goto(ACCOUNT_PROFILE_URL)
+    await asyncio.sleep(random.randint(3000, 5000)/1000.0)
+
+    candidatePages = [NIKE_EVENT_URL, NIKE_INBOX_URL, NIKE_ORDERS_URL]
+    random.shuffle(candidatePages)
+
+    for i in range(2):
+        await page.goto(candidatePages[i])
+        await asyncio.sleep(random.randint(3000, 5000)/1000.0)
+
+    await asyncio.sleep(random.randint(3000, 5000)/1000.0)
 
 
 async def click_from_drop_down_list(page, dropDownTxtPathTmpl, dropDownId, selectTxt):
@@ -451,6 +473,16 @@ def getPhoneNumberCheckAccountList(dummy):
     return inputAccountList
 
 
+def getLoginPatrolAccountList(dummy):
+    inputAccountList = []
+    with open(INPUT_LOGIN_PATROL_CSV, "r", encoding="utf-8") as f:
+        inputCsv = csv.reader(f)
+        next(inputCsv)  # skip header
+        for items in inputCsv:
+            inputAccountList.append(AccountInfo(items[0], "", items[1]))
+    return inputAccountList
+
+
 def doAsyncOperation(operation, readInputData):
     semaphore = asyncio.Semaphore(CONFIG_DICT[KEY_THREAD_NUM])
 
@@ -518,6 +550,33 @@ def writePhoneNumberResultCsv():
     log.info("")
 
 
+def writeLoginPatrolResultCsv():
+    success_cnt = 0
+    error_cnt = 0
+    f = open("%s\\%s" % (OUT_DIR, dt.now().strftime(
+        'result-login-result-%Y%m%d-%H%M%S.csv')), "w")
+    for i in range(output_q.qsize()):
+        items = output_q.get()
+        accountInfo = items[0]
+
+        if items[1] == SUCCESS:
+            success_cnt += 1
+        else:
+            accountInfo.phoneNumber = "ERROR"
+            error_cnt += 1
+
+        f.write("%s:%s,%s\n" % (accountInfo.email,
+                                accountInfo.password,
+                                items[1]))
+
+    f.close()
+    log.info("")
+    log.info("Success:%d Fail:%d" % (success_cnt, error_cnt))
+    log.info("")
+    log.info("Refer %s for more detail." % f.name)
+    log.info("")
+
+
 # def mach_license():
 #    return licencemanager.match_license()
 
@@ -538,7 +597,8 @@ def main():
         load_address_list()
         operation, readInputData, writeResultData = fire.Fire(
             {"updateAccount": getFunctionsForAccountUpdate,
-             "checkPhoneNumber": getFunctionsForPhoneNumberCheck}
+             "checkPhoneNumber": getFunctionsForPhoneNumberCheck,
+             "loginPatrol": getFunctionsForLoginPatrol}
         )
         doAsyncOperation(operation, readInputData)
         writeResultData()
@@ -555,6 +615,10 @@ def getFunctionsForAccountUpdate():
 
 def getFunctionsForPhoneNumberCheck():
     return getAccountPhoneNumber, getPhoneNumberCheckAccountList, writePhoneNumberResultCsv
+
+
+def getFunctionsForLoginPatrol():
+    return accessRandomPage, getLoginPatrolAccountList, writeLoginPatrolResultCsv
 
 
 if __name__ == "__main__":
