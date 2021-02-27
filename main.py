@@ -92,6 +92,8 @@ OUT_DIR = "result"
 
 JAPAN = "日本"
 
+COUNT_OF_RANDOM_WINDOW_SIZE_CHANGING = 5
+
 
 class LoginError(Exception):
     pass
@@ -114,11 +116,70 @@ class AddressInfo():
         self.zipcode = zipcode
 
 
+async def changeWindowSize(page, connection, windowId, width, height):
+    await page.setViewport({'width': width, 'height': height})
+    await connection.send('Browser.setWindowBounds', {
+        'bounds': {
+            'height': height,
+            'width': width
+        },
+        'windowId': windowId
+    })
+
+
+async def changeWindowSizeMax(page, connection, windowId, maxWidth, maxHeight):
+    await page.setViewport({'width': maxWidth, 'height': maxHeight})
+    await connection.send('Browser.setWindowBounds', {
+        'bounds': {
+            'windowState': 'maximized'
+        },
+        'windowId': windowId
+    })
+
+
+async def changeRandomMinusWindowSize(page, connection, targetId):
+    windowInfo = (await connection.send('Browser.getWindowForTarget', {'targetId': targetId}))
+    windowId = windowInfo['windowId']
+    maxWidth = windowInfo['bounds']['width']
+    maxHeight = windowInfo['bounds']['height']
+    currentWidth = maxWidth
+    currentHeight = maxHeight
+    for i in range(COUNT_OF_RANDOM_WINDOW_SIZE_CHANGING):
+        if random.randint(0, 1) == 0:
+            currentWidth = max(currentWidth-random.randint(2, 20), 10)
+        if random.randint(0, 1) == 0:
+            currentHeight = max(currentHeight-random.randint(2, 20), 10)
+        await changeWindowSize(page, connection, windowId, currentWidth, currentHeight)
+
+
+async def changeRandomPlusWindowSize(page, connection, targetId, maxWidth, maxHeight):
+    windowInfo = (await connection.send('Browser.getWindowForTarget', {'targetId': targetId}))
+    windowId = windowInfo['windowId']
+    currentWidth = windowInfo['bounds']['width']
+    currentHeight = windowInfo['bounds']['height']
+    for i in range(COUNT_OF_RANDOM_WINDOW_SIZE_CHANGING):
+        if random.randint(0, 1) == 0:
+            currentWidth = min(
+                currentWidth+random.randint(2, 10), maxWidth)
+        if random.randint(0, 1) == 0:
+            currentHeight = min(
+                currentHeight+random.randint(2, 10), maxHeight)
+        await changeWindowSize(page, connection, windowId, currentWidth, currentHeight)
+
+
+async def changeRandomWindowSize(page, connection, targetId, maxWidth, maxHeight):
+    if random.randint(0, 1) == 0:
+        await changeRandomMinusWindowSize(page, connection, targetId)
+    else:
+        await changeRandomPlusWindowSize(page, connection, targetId, maxWidth, maxHeight)
+
+
 async def callOperation(operation, accountInfo, semaphore):
     global output_q
 
     with await semaphore:
         browser = None
+        page = None
         try:
             browser = await launch(headless=CONFIG_DICT[KEY_HEADLESS],
                                    executablePath="C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -136,13 +197,13 @@ async def callOperation(operation, accountInfo, semaphore):
             else:
                 await page.goto(ACCOUNT_LOGIN_URL)
 
-            await type_login_info(page, accountInfo.email, accountInfo.password)
+            await type_login_info(page, browser._connection, accountInfo.email, accountInfo.password)
 
             sleep(random.randint(500, 4000) / 1000)
             log.debug("Click login button %s", accountInfo.email)
 
-            # loginボタンクリック後、ページんの遷移が完了するのを待つ
-            loadPromise = page.waitForNavigation()
+            # loginボタンクリック後、ページの遷移が完了するのを待つ
+            loadPromise = page.waitForNavigation({"timeout": 15000})
             await click(page, HTML_LOGIN_BUTTON_PATH)
             await loadPromise
 
@@ -166,8 +227,22 @@ async def callOperation(operation, accountInfo, semaphore):
             await page.screenshot(path="{}/{}.err.png".format(OUT_DIR, accountInfo.email), fullPage=True)
 
         finally:
+            if page is not None:
+                await page.close()
+
             if browser is not None:
                 await browser.close()
+
+
+async def changeWindowSize(page, connection, windowId, width, height):
+    await page.setViewport({'width': width, 'height': height})
+    await connection.send('Browser.setWindowBounds', {
+        'bounds': {
+            'height': height,
+            'width': width
+        },
+        'windowId': windowId
+    })
 
 
 async def paste_txt(page, xpath):
@@ -180,7 +255,7 @@ async def paste_txt(page, xpath):
     await page.keyboard.up('Control')
 
 
-async def type_txt_slowly(page, xpath, txt):
+async def type_txt_with_changing_window_size(page, connection, targetId, maxWidth, maxHeight, xpath, txt):
     await page.waitForXPath(xpath)
     elem = await page.xpath(xpath)
 
@@ -189,6 +264,7 @@ async def type_txt_slowly(page, xpath, txt):
     for s in txt:
         await asyncio.sleep(random.uniform(CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MIN], CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MAX]))
         await elem[0].type(s)
+        await changeRandomWindowSize(page, connection, targetId, maxWidth, maxHeight)
 
 
 async def type_txt(page, xpath, txt, timeout=15000):
@@ -244,22 +320,34 @@ async def press_enter(page, xpath):
     await elem[0].press('Enter')
 
 
-async def type_login_info(page, email, passwd):
+async def type_login_info(page, connection, email, passwd):
     global log
+
+    targetId = (await connection.send('Target.getTargets'))['targetInfos'][0]['targetId']
+    windowInfo = (await connection.send('Browser.getWindowForTarget', {'targetId': targetId}))
+    windowId = windowInfo['windowId']
+    maxWidth = windowInfo['bounds']['width']
+    maxHeight = windowInfo['bounds']['height']
+
+    for i in range(4):
+        await changeRandomMinusWindowSize(page, connection, targetId)
 
     for i in range(random.randint(1, 5)):
         if random.randint(0, 1) == 0:
             await press_enter(page, HTML_LOGIN_PASS_PATH)
         else:
             await press_enter(page, HTML_LOGIN_EMAIL_PATH)
-        await asyncio.sleep(0.5)
+        await changeRandomWindowSize(page, connection, targetId, maxWidth, maxHeight)
+        await asyncio.sleep(0.1)
 
     if random.randint(0, 1) == 0:
         log.debug("copy and paste at login text box : {}".format(email))
         await copy_paste_address_and_passwd(page, email, passwd)
 
-    await type_txt_slowly(page, HTML_LOGIN_EMAIL_PATH, email)
-    await type_txt_slowly(page, HTML_LOGIN_PASS_PATH, passwd)
+    await type_txt_with_changing_window_size(page, connection, targetId, maxWidth, maxHeight, HTML_LOGIN_EMAIL_PATH, email)
+    await type_txt_with_changing_window_size(page, connection, targetId, maxWidth, maxHeight, HTML_LOGIN_PASS_PATH, passwd)
+
+    await changeWindowSizeMax(page, connection, windowId, maxWidth, maxHeight)
 
 
 async def copy_paste_address_and_passwd(page, email, passwd):
