@@ -231,7 +231,10 @@ async def callOperation(operation, accountInfo, semaphore):
                 await page.close()
 
             if browser is not None:
-                await browser.close()
+                try:
+                    await browser.close()
+                except OSError as e: 
+                    log.exception("Failed to close browse due to OSError. Continue next operation forcibly. Account: %s. Error description: %s", accountInfo.email, e)
 
 
 async def changeWindowSize(page, connection, windowId, width, height):
@@ -261,10 +264,14 @@ async def type_txt_with_changing_window_size(page, connection, targetId, maxWidt
 
     await elem[0].click(clickCount=3)
     await elem[0].press('Backspace')
+
+    cnt = 1
     for s in txt:
         await asyncio.sleep(random.uniform(CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MIN], CONFIG_DICT[KEY_LOGIN_TYPING_INTERVAL_MAX]))
         await elem[0].type(s)
-        await changeRandomWindowSize(page, connection, targetId, maxWidth, maxHeight)
+        if cnt % 5 == 0:
+            await changeRandomWindowSize(page, connection, targetId, maxWidth, maxHeight)
+        cnt += 1
 
 
 async def type_txt(page, xpath, txt, timeout=15000):
