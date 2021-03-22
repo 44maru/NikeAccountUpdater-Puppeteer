@@ -728,6 +728,7 @@ def main():
     try:
         load_config()
         if not hasPermission():
+            input("Please push Enter to exit.")
             return
         load_proxy()
         load_address_list()
