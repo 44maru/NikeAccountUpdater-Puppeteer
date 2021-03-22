@@ -8,6 +8,7 @@ from datetime import datetime as dt
 from time import sleep
 import asyncio
 
+import requests
 import pyperclip
 import fire
 
@@ -34,6 +35,8 @@ NIKE_ORDERS_URL = "https://www.nike.com/jp/orders"
 NIKE_EVENT_URL = "https://web.nike.com/events/my_events/index.html#/discover"
 NIKE_INBOX_URL = "https://www.nike.com/member/inbox/"
 
+AUTHENTICATION_SERVER = "http://yamatoblackbox.com/autoremoteexecuter/auth.php"
+
 MERUADO_POI_POI_URL = "https://m.kuku.lu/index.php"
 
 LOG_CONF = "./logging.conf"
@@ -51,6 +54,8 @@ KEY_LOGIN_TYPING_INTERVAL_MAX = "LOGIN_TYPING_INTERVAL_MAX"
 KEY_GET_NEW_ADDRESS_FROM_POI_POI = "GET_NEW_ADDRESS_FROM_MERUADO_POI_POI"
 KEY_MERUADO_POI_POI_USER = "MERUADO_POI_POI_USER"
 KEY_MERUADO_POI_POI_PASS = "MERUADO_POI_POI_PASS"
+KEY_SERIAL_KEY = "SERIAL_KEY"
+KEY_WINDOWS_PRODUCT_KEY = "WINDOWS_PRODUCT_KEY"
 CONFIG_DICT = {}
 PROXY_LIST = []
 ADDRESS_LIST = []
@@ -233,8 +238,9 @@ async def callOperation(operation, accountInfo, semaphore):
             if browser is not None:
                 try:
                     await browser.close()
-                except OSError as e: 
-                    log.exception("Failed to close browse due to OSError. Continue next operation forcibly. Account: %s. Error description: %s", accountInfo.email, e)
+                except OSError as e:
+                    log.exception(
+                        "Failed to close browse due to OSError. Continue next operation forcibly. Account: %s. Error description: %s", accountInfo.email, e)
 
 
 async def changeWindowSize(page, connection, windowId, width, height):
@@ -441,11 +447,8 @@ def load_config():
             CONFIG_DICT[KEY_GET_NEW_ADDRESS_FROM_POI_POI] = (
                 "true" == items[1].lower())
 
-        elif items[0] == KEY_MERUADO_POI_POI_USER:
-            CONFIG_DICT[KEY_MERUADO_POI_POI_USER] = items[1]
-
-        elif items[0] == KEY_MERUADO_POI_POI_PASS:
-            CONFIG_DICT[KEY_MERUADO_POI_POI_PASS] = items[1]
+        else:
+            CONFIG_DICT[items[0]] = items[1]
 
 
 def load_proxy():
@@ -684,10 +687,48 @@ def output_meruado_poi_poi_info():
         log.info("")
 
 
+def hasPermission():
+    import uuid
+    import re
+    import hashlib
+    import json
+
+    global log
+
+    serialKey = CONFIG_DICT[KEY_SERIAL_KEY]
+    productKey = CONFIG_DICT[KEY_WINDOWS_PRODUCT_KEY]
+    macAddress = '-'.join(re.split('(..)', format(uuid.getnode(), 'x'))[1::2])
+    log.debug("DEBUG: macAddress -> %s", macAddress)
+    pVal = productKey + macAddress
+    pVal = hashlib.sha256(pVal.encode()).hexdigest().upper()
+    postData = {"POSTSTR": serialKey, "PKEY": pVal}
+    log.debug("DEBUG: Post authentication data -> %s", postData)
+    response = requests.post(AUTHENTICATION_SERVER, data=postData)
+
+    if response.status_code != 200:
+        log.info("Authentication server return HTTP status %d",
+                 response.status_code)
+        return False
+
+    responseDict = json.loads(response.text)
+
+    if responseDict["ReturnCode"] != "200":
+        log.info("ERROR: Authentication error. ReturnCode:%s, HTML:'%s', Message:'%s'",
+                 responseDict["ReturnCode"],
+                 responseDict["HTML"],
+                 responseDict["Message"],
+                 )
+        return False
+
+    return True
+
+
 def main():
     global log
     try:
         load_config()
+        if not hasPermission():
+            return
         load_proxy()
         load_address_list()
         operation, readInputData, writeResultData = fire.Fire(

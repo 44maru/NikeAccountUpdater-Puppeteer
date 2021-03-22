@@ -10,6 +10,7 @@ pyinstaller = "==3.4"
 pyppeteer = "==0.2.5"
 fire = "*"
 pyperclip = "*"
+requests = "*"
 
 [requires]
 python_version = "3.6"
