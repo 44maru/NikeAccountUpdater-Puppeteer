@@ -43,6 +43,7 @@ LOG_CONF = "./logging.conf"
 INPUT_CSV = "./input.csv"
 INPUT_LOGIN_PATROL_CSV = "./input_login_patrol.csv"
 INPUT_PHONE_NUMBER_CHECK_CSV = "./input_phone_number_check.csv"
+INPUT_LOGIN_WITH_CHROME_PROFILE_CSV = "./input_login_with_chrome_profile.csv"
 CONFIG_TXT = "./config.txt"
 PROXY_TXT = "./proxy.txt"
 ADDRESS_LIST_TXT = "./address_list.txt"
@@ -56,6 +57,7 @@ KEY_MERUADO_POI_POI_USER = "MERUADO_POI_POI_USER"
 KEY_MERUADO_POI_POI_PASS = "MERUADO_POI_POI_PASS"
 KEY_SERIAL_KEY = "SERIAL_KEY"
 KEY_WINDOWS_PRODUCT_KEY = "WINDOWS_PRODUCT_KEY"
+KEY_CHROME_USER_DATA_DIR = "CHROME_USER_DATA_DIR"
 CONFIG_DICT = {}
 PROXY_LIST = []
 ADDRESS_LIST = []
@@ -107,10 +109,11 @@ class LoginError(Exception):
 
 
 class AccountInfo():
-    def __init__(self, email, newEmail, password):
+    def __init__(self, email, password, newEmail="", chromeProfile=""):
         self.email = email
         self.newEmail = newEmail
         self.password = password
+        self.chromeProfile = chromeProfile
         self.phoneNumber = None
 
 
@@ -186,13 +189,31 @@ async def callOperation(operation, accountInfo, semaphore):
         browser = None
         page = None
         try:
+            args = [
+                '--start-maximized',
+                "--load-extension={}/{}".format(
+                    os.getcwd(), CHROME_PROXY_EXTENTION_DIR)
+            ]
+            if accountInfo.chromeProfile != '':
+                args.append(
+                    "--user-data-dir={}".format(CONFIG_DICT[KEY_CHROME_USER_DATA_DIR]))
+                args.append(
+                    "--profile-directory={}".format(accountInfo.chromeProfile))
+
+            log.debug("chrome launch with args {}".format(args))
+
             browser = await launch(headless=CONFIG_DICT[KEY_HEADLESS],
                                    executablePath="C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
                                    defaultViewport=None,
                                    ignoreDefaultArgs=[
                                        "--disable-extensions", "--enable-automation"],
-                                   args=['--start-maximized', "--load-extension={}/{}".format(os.getcwd(), CHROME_PROXY_EXTENTION_DIR)])
-            page = await browser.newPage()
+                                   args=args
+                                   )
+
+            log.debug("get pages from browser")
+            pages = await browser.pages()
+            page = pages[len(pages)-1]
+            # page = await browser.newPage()
             log.debug("Start operation for account %s", accountInfo.email)
             sleep(random.randint(500, 2000) / 1000.0)
             if 0 < len(PROXY_LIST):
@@ -336,7 +357,16 @@ async def press_enter(page, xpath):
 async def type_login_info(page, connection, email, passwd):
     global log
 
-    targetId = (await connection.send('Target.getTargets'))['targetInfos'][0]['targetId']
+    targetInfos = (await connection.send('Target.getTargets'))['targetInfos']
+    log.debug(
+        "connection.send('Target.getTargets'))['targetInfos']) -> {}".format(targetInfos))
+
+    for targetInfo in targetInfos:
+        if targetInfo['url'] == ACCOUNT_LOGIN_URL:
+            targetId = targetInfo['targetId']
+            break
+    log.debug("targetId is {}".format(targetId))
+
     windowInfo = (await connection.send('Browser.getWindowForTarget', {'targetId': targetId}))
     windowId = windowInfo['windowId']
     maxWidth = windowInfo['bounds']['width']
@@ -396,7 +426,6 @@ async def getAccountPhoneNumber(page, accountInfo):
         accountInfo.phoneNumber = await get_text(page, HTML_ACCOUNT_SETTING_PHONE_NUMBER_PATH, 1000)
     except TimeoutError as e:
         pass
-    print("{} {}".format(accountInfo.email, accountInfo.phoneNumber))
     await asyncio.sleep(random.randint(3000, 5000)/1000.0)
 
 
@@ -412,6 +441,10 @@ async def accessRandomPage(page, accountInfo):
         await asyncio.sleep(random.randint(3000, 5000)/1000.0)
 
     await asyncio.sleep(random.randint(3000, 5000)/1000.0)
+
+
+async def nothingToDo(page, accountInfo):
+    pass
 
 
 async def click_from_drop_down_list(page, dropDownTxtPathTmpl, dropDownId, selectTxt):
@@ -567,7 +600,8 @@ def getPhoneNumberCheckAccountList(dummy):
         inputCsv = csv.reader(f)
         next(inputCsv)  # skip header
         for items in inputCsv:
-            inputAccountList.append(AccountInfo(items[0], "", items[1]))
+            inputAccountList.append(AccountInfo(
+                email=items[0], password=items[1]))
     return inputAccountList
 
 
@@ -577,7 +611,20 @@ def getLoginPatrolAccountList(dummy):
         inputCsv = csv.reader(f)
         next(inputCsv)  # skip header
         for items in inputCsv:
-            inputAccountList.append(AccountInfo(items[0], "", items[1]))
+            inputAccountList.append(AccountInfo(
+                email=items[0], password=items[1]))
+    return inputAccountList
+
+
+def getLoginWithChromeProfileAccountList(dummy):
+    inputAccountList = []
+    with open(INPUT_LOGIN_WITH_CHROME_PROFILE_CSV, "r", encoding="utf-8") as f:
+        inputCsv = csv.reader(f)
+        next(inputCsv)  # skip header
+        for items in inputCsv:
+            print(items)
+            inputAccountList.append(AccountInfo(
+                email=items[0], password=items[1], chromeProfile=items[2]))
     return inputAccountList
 
 
@@ -594,7 +641,7 @@ def doAsyncOperation(operation, readInputData):
 
 
 def getUpdateAccountList(loop):
-    return [AccountInfo(item[0], item[1], item[2]) for item in loop.run_until_complete(read_input_csv())]
+    return [AccountInfo(email=item[0], newEmail=item[1], password=item[2]) for item in loop.run_until_complete(read_input_csv())]
 
 
 def write_result_csv():
@@ -649,10 +696,19 @@ def writePhoneNumberResultCsv():
 
 
 def writeLoginPatrolResultCsv():
+    writeLoginResultCsv(dt.now().strftime(
+        'result-login-result-%Y%m%d-%H%M%S.csv'))
+
+
+def writeLoginWithChromeProfileResultCsv():
+    writeLoginResultCsv(dt.now().strftime(
+        'result-login-with-chrome-result-%Y%m%d-%H%M%S.csv'))
+
+
+def writeLoginResultCsv(csvFileName):
     success_cnt = 0
     error_cnt = 0
-    f = open("%s\\%s" % (OUT_DIR, dt.now().strftime(
-        'result-login-result-%Y%m%d-%H%M%S.csv')), "w")
+    f = open("%s\\%s" % (OUT_DIR, csvFileName), "w")
     for i in range(output_q.qsize()):
         items = output_q.get()
         accountInfo = items[0]
@@ -733,9 +789,12 @@ def main():
         load_proxy()
         load_address_list()
         operation, readInputData, writeResultData = fire.Fire(
-            {"updateAccount": getFunctionsForAccountUpdate,
-             "checkPhoneNumber": getFunctionsForPhoneNumberCheck,
-             "loginPatrol": getFunctionsForLoginPatrol}
+            {
+                "updateAccount": getFunctionsForAccountUpdate,
+                "checkPhoneNumber": getFunctionsForPhoneNumberCheck,
+                "loginPatrol": getFunctionsForLoginPatrol,
+                "loginWithChromeProfile": getFunctionsForLoginWithChromeProfile,
+            }
         )
         doAsyncOperation(operation, readInputData)
         writeResultData()
@@ -756,6 +815,10 @@ def getFunctionsForPhoneNumberCheck():
 
 def getFunctionsForLoginPatrol():
     return accessRandomPage, getLoginPatrolAccountList, writeLoginPatrolResultCsv
+
+
+def getFunctionsForLoginWithChromeProfile():
+    return nothingToDo, getLoginWithChromeProfileAccountList, writeLoginWithChromeProfileResultCsv
 
 
 if __name__ == "__main__":

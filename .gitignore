@@ -1,6 +1,7 @@
 .venv
 build/
-dist/
+/dist/*
+!/dist/*.bat
 __pycache__
 *.log
 *.log.*
